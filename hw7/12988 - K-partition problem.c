@@ -1,7 +1,7 @@
 #include <stdio.h>
 int a[11], sum[6];
 int n, k;
-int put(int i, int ki) {
+int put(int avg, int i, int ki) {
     if(i == n) {
         int flag = 1;
         for(int j = 0; j < k-1; j++) {
@@ -15,7 +15,8 @@ int put(int i, int ki) {
     sum[ki] += a[i];
     int f = 0;
     for(int j = 0; j < k; j++) {
-        f = f | put(i+1, j);
+        if(i == n-1 || a[i+1] + sum[j] <= avg)
+            f = f | put(avg, i+1, j);
     }
     sum[ki] -= a[i];
     return f;
@@ -34,11 +35,15 @@ int main() {
             total += a[i];
         }
         int flag = 1;
-        for(int j = 0; j < k; j++) {
-            if(put(0, j)) {
-                flag = 0;
-                printf("True\n");
-                break;
+        if(total % k == 0) {
+            int avg = total / k;
+            //printf("avg = %d\n", avg);
+            for(int j = 0; j < k; j++) {
+                if(a[0] < avg && put(avg, 0, j)) {
+                    flag = 0;
+                    printf("True\n");
+                    break;
+                }
             }
         }
         if(flag)
