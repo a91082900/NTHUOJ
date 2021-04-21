@@ -18,7 +18,7 @@
 
 // Error types
 typedef enum {
-    UNDEFINED, MISPAREN, NOTNUMID, NOTFOUND, RUNOUT, NOTLVAL, DIVZERO, SYNTAXERR
+    UNDEFINED, MISPAREN, NOTID, NOTNUMID, NOTFOUND, RUNOUT, NOTLVAL, DIVZERO, SYNTAXERR, NOTDEF, ASSIGNERR
 } ErrorType;
 
 // Structure of the symbol table
@@ -31,6 +31,9 @@ typedef struct {
 typedef struct _Node {
     TokenSet data;
     int val;
+    int ldepth;
+    int rdepth;
+    int hasID;
     char lexeme[MAXLEN];
     struct _Node *left; 
     struct _Node *right;
@@ -48,6 +51,8 @@ extern int getval(char *str);
 // Set the value of a variable
 extern int setval(char *str, int val);
 
+extern int findaddr(char *str);
+
 // Make a new node according to token type and lexeme
 extern BTNode *makeNode(TokenSet tok, const char *lexe);
 
@@ -55,8 +60,15 @@ extern BTNode *makeNode(TokenSet tok, const char *lexe);
 extern void freeTree(BTNode *root);
 
 extern BTNode *factor(void);
-extern BTNode *term(void);
-extern BTNode *expr(void);
+extern BTNode *assign_expr();
+extern BTNode *or_expr(BTNode*);
+extern BTNode *xor_expr(BTNode*);
+extern BTNode *and_expr(BTNode*);
+extern BTNode *addsub_expr(BTNode*);
+extern BTNode *muldiv_expr(BTNode*);
+extern BTNode *unary_expr(BTNode*);
+//extern BTNode *term(void);
+//extern BTNode *expr(void);
 extern void statement(void);
 
 // Print error message and exit the program

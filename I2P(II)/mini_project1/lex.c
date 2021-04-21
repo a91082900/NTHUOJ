@@ -28,8 +28,17 @@ TokenSet getToken(void)
         return INT;
     } else if (c == '+' || c == '-') {
         lexeme[0] = c;
-        lexeme[1] = '\0';
-        return ADDSUB;
+        char new_c = fgetc(stdin);
+        if(c == new_c) {
+            lexeme[1] = c;
+            lexeme[2] = '\0';
+            return INCDEC;
+        }
+        else {
+            ungetc(new_c, stdin);
+            lexeme[1] = '\0';
+            return ADDSUB;   
+        }
     } else if (c == '*' || c == '/') {
         lexeme[0] = c;
         lexeme[1] = '\0';
@@ -46,9 +55,26 @@ TokenSet getToken(void)
     } else if (c == ')') {
         strcpy(lexeme, ")");
         return RPAREN;
-    } else if (isalpha(c)) {
+    } else if (c == '|') {
+        strcpy(lexeme, "|");
+        return OR;
+    } else if (c == '&') {
+        strcpy(lexeme, "&");
+        return AND;
+    } else if (c == '^') {
+        strcpy(lexeme, "^");
+        return XOR;
+    } else if (isalpha(c) || c == '_') {
         lexeme[0] = c;
-        lexeme[1] = '\0';
+        c = fgetc(stdin);
+        i = 1;
+        while ((isalpha(c) || isdigit(c) || c == '_') && i < MAXLEN) {
+            lexeme[i] = c;
+            ++i;
+            c = fgetc(stdin);
+        }
+        ungetc(c, stdin);
+        lexeme[i] = '\0';
         return ID;
     } else if (c == EOF) {
         return ENDFILE;
