@@ -4,199 +4,207 @@
 #include "codeGen.h"
 
 #define dest (under_assign ? instructions[ins_len++]: trash)
+#define max(a,b) (((a) > (b)) ? (a) : (b))
 
-int reg = 0;
+int regs[MAXREG] = {0, 0, 0, 0, 1, 1, 1, 1};
 int ins_len = 0;
 char trash[20], instructions[MAXINS][20];
-/*int evaluateTree(BTNode *root) {
-    int retval = 0, lv = 0, rv = 0;
 
-    if (root != NULL) {
-        switch (root->data) {
-            case ID:
-                retval = getval(root->lexeme);
-                break;
-            case INT:
-                retval = atoi(root->lexeme);
-                break;
-            case ASSIGN:
-                rv = evaluateTree(root->right);
-                retval = setval(root->left->lexeme, rv);
-                break;
-            case ADDSUB:
-            case MULDIV:
-                lv = evaluateTree(root->left);
-                rv = evaluateTree(root->right);
-                if (strcmp(root->lexeme, "+") == 0) {
-                    retval = lv + rv;
-                } else if (strcmp(root->lexeme, "-") == 0) {
-                    retval = lv - rv;
-                } else if (strcmp(root->lexeme, "*") == 0) {
-                    retval = lv * rv;
-                } else if (strcmp(root->lexeme, "/") == 0) {
-                    if (rv == 0)
-                        error(DIVZERO);
-                    retval = lv / rv;
-                }
-                break;
-            default:
-                retval = 0;
+int getAvaliableReg() {
+    for(int i = 4; i < MAXREG; i++) {
+        if(regs[i]) {
+            regs[i] = 0;
+            return i;
         }
     }
-    return retval;
-}*/
-void printPrefix(BTNode *root) {
-    if (root != NULL) {
-        printf("%s ", root->lexeme);
-        printPrefix(root->left);
-        printPrefix(root->right);
-    }
-}
-int postfixTraversal(BTNode *root) {
-    if (root != NULL) {
-        root->ldepth = 1 + postfixTraversal(root->left);
-        root->rdepth = 1 + postfixTraversal(root->right);
-        //printf("%s ", root->lexeme);
-        if(root->ldepth > root->rdepth)
-            return root->ldepth;
-        else
-            return root->rdepth;
-    }
-    return -1;
+    error(RUNOUT);
 }
 
+void freeReg(char *lexeme) {
+    regs[lexeme[0]-'0'] = 1;
+}
+
+// Evaluate the syntax tree
 BTNode* evaluateTree(BTNode *root, int under_assign) {
     if(root != NULL) {
-        int calcFirst = 2, calcLast = 1;
-        //printf("%s: %d %d\n", root->lexeme, root->ldepth, root->rdepth);
         if(!under_assign) {
-            under_assign = root->data == ASSIGN;
+            under_assign = root->data == ASSIGN || root->data == INC_ID || root->data == DEC_ID;
         }
-        if(root->rdepth > root->ldepth) {
-            calcFirst = 1, calcLast = 2;
-            if(root->rdepth != 1)
-                root->right = evaluateTree(root->right, under_assign);
-            if(root->ldepth != 1)
-                root->left = evaluateTree(root->left, under_assign);
-        }
-        else {
-            if(root->ldepth != 1)
+
+        if(root->rdepth > root->ldepth)
+            root->right = evaluateTree(root->right, under_assign);
+        if(root->data != ASSIGN)
             root->left = evaluateTree(root->left, under_assign);
-            if(root->rdepth != 1)
-                root->right = evaluateTree(root->right, under_assign);
-        }
-        
-        char buffer[10];
-        int v = 0;
-        BTNode *tmp = NULL;
+        if(root->ldepth >= root->rdepth)
+            root->right = evaluateTree(root->right, under_assign);
+
+        int addr = 0;
+        BTNode *tmp;
+        char buffer[20];
+        int r;
         switch (root->data) {
-            case ASSIGN:        
-                sprintf(buffer, "%d", reg % MAXREG);
-                if(root->left->data != ID)
-                    err(ASSIGNERR);
+            case ASSIGN:
                 if(root->right->data == INT) {
-                    sprintf(dest, "MOV r%d, %s\n", reg++ % MAXREG, root->right->lexeme);
+                    r = getAvaliableReg();
+                    sprintf(dest, "MOV r%d, %d\n", r, root->right->val);
+                    sprintf(root->right->lexeme, "%d", r);
                     root->right->data = REG;
-                    root->right->val = atoi(root->right->lexeme);
-                    strcpy(root->right->lexeme, buffer);
                 }
-                else if(root->right->data == ID) {
-                    sprintf(dest, "MOV r%d, [%d]\n", reg++ % MAXREG, findaddr(root->right->lexeme));
-                    root->right->data = REG;
-                    root->right->val = getval(root->right->lexeme);
-                    strcpy(root->right->lexeme, buffer);
+                if(root->left->data != ID || root->right->data != REG) {
+                    error(ASSIGNERR);
                 }
-                else if(root->right->data != REG)
-                    err(ASSIGNERR);
                 setval(root->left->lexeme, root->right->val);
-                sprintf(dest, "MOV [%d], r%s\n", findaddr(root->left->lexeme), root->right->lexeme);
+                addr = findaddr(root->left->lexeme);
+                if(addr <= 8) {
+                    sprintf(dest, "MOV r%d, r%s\n", addr/4, root->right->lexeme);
+                }
+                else {
+                    sprintf(dest, "MOV [%d], r%s\n", addr, root->right->lexeme);
+                }
                 tmp = makeNode(REG, root->right->lexeme);
                 tmp->val = root->right->val;
-                tmp->hasID = 1;
-                tmp->ldepth = tmp->rdepth = 0;
                 return tmp;
                 break;
-            case MULDIV:
             case ADDSUB:
-            case XOR:
-            case OR:
+            case MULDIV:
             case AND:
-                if(root->left->data == ID) {
-                    sprintf(dest, "MOV r%d, [%d]\n", reg++ % MAXREG, findaddr(root->left->lexeme));
-                    root->left->val = getval(root->left->lexeme);
+            case OR:
+            case XOR:
+                if(root->left->data == INT && root->right->data == INT) {
+                    if(root->lexeme[0] == '+') {
+                        root->val = root->left->val + root->right->val;
+                    }
+                    else if(root->lexeme[0] == '-') {
+                        root->val = root->left->val - root->right->val;
+                    }
+                    else if(root->lexeme[0] == '*') {
+                        root->val = root->left->val * root->right->val;
+                    }
+                    else if(root->lexeme[0] == '/') {
+                        if(root->right->val == 0)
+                            error(DIVZERO);
+                        root->val = root->left->val / root->right->val;
+                    }
+                    else if(root->lexeme[0] == '^') {
+                        root->val = root->left->val ^ root->right->val;
+                    }
+                    else if(root->lexeme[0] == '&') {
+                        root->val = root->left->val & root->right->val;
+                    }
+                    else if(root->lexeme[0] == '|') {
+                        root->val = root->left->val | root->right->val;
+                    }
+                    sprintf(buffer, "%d", root->val);
+                    tmp = makeNode(INT, buffer);
+                    return tmp;
                 }
-                else if(root->left->data == INT) {
-                    sprintf(dest, "MOV r%d, %s\n", reg++ % MAXREG, root->left->lexeme);
-                    root->left->val = atoi(root->left->lexeme);
+                else if(root->left->data == INT && root->right->data == REG) {
+                    r = getAvaliableReg();
+                    sprintf(dest, "MOV r%d, %d\n", r, root->left->val);
+                    sprintf(root->left->lexeme, "%d", r);
+                    root->left->data = REG;
+                }
+                else if(root->right->data == INT && root->left->data == REG) {
+                    if(root->lexeme[0] == '/' && root->right->val == 0)
+                        error(DIVZERO);
+                    r = getAvaliableReg();
+                    sprintf(dest, "MOV r%d, %d\n", r, root->right->val);
+                    sprintf(root->right->lexeme, "%d", r);
+                    root->right->data = REG;
+                }
+                else if(root->left->data != REG || root->right->data != REG) {
+                    error(SYNTAXERR);
                 }
 
-                if(root->right->data == ID) {
-                    sprintf(dest, "MOV r%d, [%d]\n", reg++ % MAXREG, findaddr(root->right->lexeme));
-                    root->right->val = getval(root->right->lexeme);
-                }
-                else if(root->right->data == INT) {
-                    sprintf(dest, "MOV r%d, %s\n", reg++ % MAXREG, root->right->lexeme);
-                    root->right->val = atoi(root->right->lexeme);
-                }
-
-                if (root->lexeme[0] == '+') {
+                if(root->lexeme[0] == '+') {
+                    root->val = root->left->val + root->right->val;
                     sprintf(dest, "ADD");
-                    v = root->left->val + root->right->val;
                 }
                 else if(root->lexeme[0] == '-') {
+                    root->val = root->left->val - root->right->val;
                     sprintf(dest, "SUB");
-                    v = root->left->val - root->right->val;
                 }
                 else if(root->lexeme[0] == '*') {
+                    root->val = root->left->val * root->right->val;
                     sprintf(dest, "MUL");
-                    v = root->left->val * root->right->val;
                 }
                 else if(root->lexeme[0] == '/') {
-                    sprintf(dest, "DIV");
-                    if(root->right->val == 0) {
-                        if(root->right->hasID)
-                            v = 0;
-                        else
-                            err(DIVZERO);
-                    }
+                    if(root->right->val != 0)
+                        root->val = root->left->val / root->right->val;
                     else
-                        v = root->left->val / root->right->val;
-                }
-                else if(root->lexeme[0] == '|') {
-                    sprintf(dest, "OR");
-                    v = root->left->val | root->right->val;
-                }
-                else if(root->lexeme[0] == '&') {
-                    sprintf(dest, "AND");
-                    v = root->left->val & root->right->val;
+                        root->val = 0;
+                    sprintf(dest, "DIV");
                 }
                 else if(root->lexeme[0] == '^') {
+                    root->val = root->left->val ^ root->right->val;
                     sprintf(dest, "XOR");
-                    v = root->left->val ^ root->right->val;
                 }
+                else if(root->lexeme[0] == '&') {
+                    root->val = root->left->val & root->right->val;
+                    sprintf(dest, "AND");
+                }
+                else if(root->lexeme[0] == '|') {
+                    root->val = root->left->val | root->right->val;
+                    sprintf(dest, "OR");
+                }
+                tmp = makeNode(REG, root->left->lexeme);
+                tmp->val = root->val;                
+                sprintf(dest, " r%s, r%s\n", root->left->lexeme, root->right->lexeme);
 
-                sprintf(dest, " r%d, r%d\n", (reg-calcFirst) % MAXREG, (reg-calcLast) % MAXREG);
-                if(calcFirst == 1) {
-                    sprintf(dest, "MOV r%d, r%d\n", (reg-2) % MAXREG, (reg-1) % MAXREG);
-                }
-                sprintf(buffer, "%d", (reg-2) % MAXREG);
-                reg--;
-                tmp = makeNode(REG, buffer);
-                tmp->val = v;
-                tmp->ldepth = tmp->rdepth = 0;
-                tmp->hasID = root->left->hasID | root->right->hasID;
+                freeReg(root->right->lexeme);
                 return tmp;
+                break;
+            case INT: // the value of INT is set when node is made
                 break;
             case ID:
                 root->val = getval(root->lexeme);
+                addr = findaddr(root->lexeme);
+                r = getAvaliableReg();
+                if(addr <= 8) {
+                    sprintf(dest, "MOV r%d, r%d\n", r, addr/4);
+                    sprintf(root->lexeme, "%d", r);
+                }
+                else {
+                    sprintf(dest, "MOV r%d, [%d]\n", r, addr);
+                    sprintf(root->lexeme, "%d", r);
+                }
+                root->data = REG;
                 break;
-            case INT:
-                root->val = atoi(root->lexeme);
+            case INC_ID:
+            case DEC_ID:
+                root->val = getval(root->lexeme);
+                addr = findaddr(root->lexeme);
+                if(addr <= 8) {
+                    sprintf(root->lexeme, "%d", addr/4);
+                    sprintf(dest, "%s r%d, r3\n", (root->data == INC_ID ? "ADD": "SUB"), addr/4);
+                }
+                else {
+                    r = getAvaliableReg();
+                    sprintf(dest, "MOV r%d, [%d]\n", r, addr);
+                    sprintf(root->lexeme, "%d", r);
+                    
+                    sprintf(dest, "%s r%s, r3\n", (root->data == INC_ID ? "ADD": "SUB"), root->lexeme);
+                    sprintf(dest, "MOV [%d], r%s\n", addr, root->lexeme);
+                }
+                root->data = REG;
+                root->val = root->val + (root->data == INC_ID ? 1: -1);
                 break;
             default:
-                break;  
+                break;
         }
         return root;
     }
     return NULL;
+}
+
+void printPrefix(BTNode *root) {
+
+}
+int postfixTraversal(BTNode *root) {
+    if(root != NULL) {
+        root->ldepth = 1 + postfixTraversal(root->left);
+        root->rdepth = 1 + postfixTraversal(root->right);
+        return max(root->ldepth, root->rdepth);
+    }
+    return -1;
 }

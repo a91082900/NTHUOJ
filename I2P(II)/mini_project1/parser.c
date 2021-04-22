@@ -74,7 +74,10 @@ BTNode *makeNode(TokenSet tok, const char *lexe) {
     BTNode *node = (BTNode*)malloc(sizeof(BTNode));
     strcpy(node->lexeme, lexe);
     node->data = tok;
-    node->val = 0;
+    if(tok == INT)
+        node->val = atoi(node->lexeme);
+    else
+        node->val = 0;
     node->ldepth = node->rdepth = 0;
     node->hasID = tok == ID;
     node->left = NULL;
@@ -96,7 +99,6 @@ void freeTree(BTNode *root) {
 //		   	 LPAREN expr RPAREN |
 //		   	 ADDSUB LPAREN expr RPAREN
 // factor := INT | ID | INCDEC ID | LPAREN assign_expr RPAREN
-
 BTNode *factor(void) {
     BTNode *retp = NULL, *left = NULL;
 
@@ -115,18 +117,18 @@ BTNode *factor(void) {
             retp->right = expr();
         }*/
     } else if (match(INCDEC)) {
-        retp = makeNode(ASSIGN, "=");
+        set_incdec = 1;
+        //retp = makeNode(ASSIGN, "=");
         char op[5];
         strcpy(op, getLexeme());
+        TokenSet op_type;
         if(op[0] == '+')
-            retp->right = makeNode(ADDSUB, "+");
+            op_type = INC_ID;
         else
-            retp->right = makeNode(ADDSUB, "-");
-        retp->right->right = makeNode(INT, "1");
+            op_type = DEC_ID;
         advance();
         if (match(ID)) {
-            retp->left = makeNode(ID, getLexeme());
-            retp->right->left = makeNode(ID, getLexeme());
+            retp = makeNode(op_type, getLexeme());
             advance();
         } else {
             error(NOTID);
@@ -281,10 +283,14 @@ void statement(void) {
     BTNode *retp = NULL;
 
     if (match(ENDFILE)) {
+        printf("MOV r0 [0] \nMOV r1 [4]\nMOV r2 [8]\n");
+        if(set_incdec) {
+            printf("MOV r3 1\n");
+        }
         for(int i = 0; i < ins_len; i++) {
             printf("%s", instructions[i]);
         }
-        printf("MOV r0 [0]\nMOV r1 [4]\nMOV r2 [8]\nEXIT 0\n");
+        printf("EXIT 0\n");
         exit(0);
     } else if (match(END)) {
         //printf(">> ");
@@ -293,10 +299,11 @@ void statement(void) {
         retp = assign_expr();
         if (match(END)) {
             postfixTraversal(retp);
-            retp = evaluateTree(retp, retp->data == ASSIGN);
-            /*printf("%d\n", retp->val);
-            printf("Prefix traversal: ");
+            /*printf("Prefix traversal: ");
             printPrefix(retp);*/
+            retp = evaluateTree(retp, retp->data == ASSIGN || retp->data == INC_ID || retp->data == DEC_ID);
+            //printf("%d\n", retp->val);
+            freeReg(retp->lexeme);
             freeTree(retp);
             //printf("\n>> ");
             advance();
